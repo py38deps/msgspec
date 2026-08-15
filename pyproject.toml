@@ -134,6 +134,10 @@ msgspec = [
 [tool.setuptools_scm]
 version_file = "src/msgspec/_version.py"
 parentdir_prefix_version = "msgspec-"
+# Pin the version via a custom scheme so that building from the backport
+# branch does not produce a dev version derived from git state.
+version_scheme = "scm_version:scheme"
+local_scheme = "no-local-version"
 
 [tool.uv.config-settings]
 editable_mode = "compat"
