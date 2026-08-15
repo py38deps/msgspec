@@ -2,6 +2,10 @@ import os
 import platform
 import sys
 
+# Make the version scheme module importable in PEP 517 isolated builds,
+# where the project root is not on sys.path.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from setuptools import setup
 from setuptools.extension import Extension
 
