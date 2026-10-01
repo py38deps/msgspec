@@ -21140,10 +21140,29 @@ convert_int(
     if (MS_LIKELY(type->types & MS_TYPE_INT)) {
         return ms_decode_pyint(obj, type, path);
     }
-    else if (type->types & (MS_TYPE_INTENUM | MS_TYPE_INTLITERAL)) {
+#if PY_VERSION_HEX < 0x03090000
+    /* Per PEP 586 `Literal[1] == Literal[True]` and `Literal[0] ==
+     * Literal[False]`; Python 3.8's `typing.Literal` cache even makes them the
+     * same object, so the int spelling has to be accepted here too. The decode
+     * paths do the same in `ms_post_decode_int64`. */
+    if (type->types & (MS_TYPE_BOOLLITERAL_TRUE | MS_TYPE_BOOLLITERAL_FALSE)) {
+        uint64_t ux;
+        bool neg, overflow;
+        overflow = fast_long_extract_parts(obj, &neg, &ux);
+        if (!overflow && !neg) {
+            if (ux == 1 && (type->types & MS_TYPE_BOOLLITERAL_TRUE)) {
+                Py_RETURN_TRUE;
+            }
+            if (ux == 0 && (type->types & MS_TYPE_BOOLLITERAL_FALSE)) {
+                Py_RETURN_FALSE;
+            }
+        }
+    }
+#endif
+    if (type->types & (MS_TYPE_INTENUM | MS_TYPE_INTLITERAL)) {
         return ms_decode_int_enum_or_literal_pyint(obj, type, path);
     }
-    else if (type->types & MS_TYPE_FLOAT) {
+    if (type->types & MS_TYPE_FLOAT) {
         double val = PyLong_AsDouble(obj);
         if (val == -1.0 && PyErr_Occurred()) {
             /* `obj` is out of range for a C double (PyLong_AsDouble sets
@@ -21153,7 +21172,7 @@ convert_int(
         }
         return ms_decode_float(val, type, path);
     }
-    else if (
+    if (
         type->types & MS_TYPE_DECIMAL
         && !(self->builtin_types & MS_BUILTIN_DECIMAL)
     ) {

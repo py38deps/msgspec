@@ -1029,6 +1029,41 @@ class TestLiterals:
             with pytest.raises(ValidationError):
                 dec.decode(msgspec.msgpack.encode(val))
 
+    @pytest.mark.parametrize(
+        "typ,payload",
+        [(Literal[True], 1), (Literal[False], 0)],
+    )
+    def test_literal_bool_int_input(self, typ, payload):
+        """Python 3.8 caches `Literal[1]`/`Literal[True]` (and `Literal[0]`/
+        `Literal[False]`) as the same object, so the int spelling is accepted
+        for a bool literal there. That has to hold on *every* code path, not
+        only the JSON/msgpack decoders -- `convert` (and through it `yaml` and
+        `toml`) used to reject it.
+
+        Which of the two spellings `typing` keeps (and so whether the result
+        comes back as `1` or `True`) depends on which was created first, hence
+        only the agreement between the paths is checked here."""
+        paths = [
+            ("json", lambda: msgspec.json.decode(str(payload).encode(), type=typ)),
+            (
+                "msgpack",
+                lambda: msgspec.msgpack.decode(
+                    msgspec.msgpack.encode(payload), type=typ
+                ),
+            ),
+            ("convert", lambda: msgspec.convert(payload, typ)),
+        ]
+        outcomes = []
+        for name, decode in paths:
+            try:
+                outcomes.append((name, "ok", decode()))
+            except ValidationError:
+                outcomes.append((name, "rejected", None))
+
+        assert len({status for _, status, _ in outcomes}) == 1, outcomes
+        expected_status = "rejected" if sys.version_info >= (3, 9) else "ok"
+        assert outcomes[0][1] == expected_status, outcomes
+
     def test_literal_bool_error_message(self):
         dec = msgspec.msgpack.Decoder(Literal[True])
         with pytest.raises(ValidationError, match="Invalid enum value False"):
