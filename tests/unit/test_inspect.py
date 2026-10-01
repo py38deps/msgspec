@@ -32,7 +32,12 @@ import msgspec
 import msgspec.inspect as mi
 from msgspec import Meta
 
-from .utils import temp_module
+from .utils import py315_or_later_only, temp_module
+
+if sys.version_info >= (3, 15):
+    # This is needed for `ruff` to recognize `frozendict` name
+    # and to not raise `F821`:
+    from builtins import frozendict
 
 try:
     from typing import Annotated
@@ -94,7 +99,7 @@ def test_typevar():
 
 
 def test_bound_typevar():
-    T = TypeVar("T", bound=Union[int, str])
+    T = TypeVar("T", bound=int | str)
     assert mi.type_info(T) == mi.UnionType((mi.IntType(), mi.StrType()))
 
 
@@ -217,9 +222,9 @@ def test_newtype():
 @pytest.mark.parametrize(
     "src, typ",
     [
-        ("type Ex = str | None", Union[str, None]),
-        ("type Ex[T] = tuple[T, int]", Tuple[Any, int]),
-        ("type Temp[T] = tuple[T, int]; Ex = Temp[str]", Tuple[str, int]),
+        ("type Ex = str | None", str | None),
+        ("type Ex[T] = tuple[T, int]", tuple[Any, int]),
+        ("type Temp[T] = tuple[T, int]; Ex = Temp[str]", tuple[str, int]),
     ],
 )
 def test_typealias(src, typ):
@@ -306,6 +311,23 @@ def test_dict(typ, kw, has_args):
     assert mi.type_info(typ) == sol
 
 
+@py315_or_later_only
+@pytest.mark.parametrize("kw", [{}, dict(min_length=0), dict(max_length=3)])
+@pytest.mark.parametrize("has_args", [False, True])
+def test_frozendict(kw, has_args):
+    if has_args:
+        typ = frozendict[int, float]
+        key = mi.IntType()
+        val = mi.FloatType()
+    else:
+        typ = frozendict
+        key = val = mi.AnyType()
+    if kw:
+        typ = Annotated[typ, Meta(**kw)]
+    sol = mi.FrozenDictType(key_type=key, value_type=val, **kw)
+    assert mi.type_info(typ) == sol
+
+
 @pytest.mark.parametrize(
     "typ",
     [
@@ -350,10 +372,7 @@ def test_abstract_mapping(typ):
 @pytest.mark.parametrize("use_union_operator", [False, True])
 def test_union(use_union_operator):
     if use_union_operator:
-        try:
-            typ = int | str
-        except TypeError:
-            pytest.skip("Union operator not supported")
+        typ = int | str
     else:
         typ = Union[int, str]
 
@@ -362,6 +381,7 @@ def test_union(use_union_operator):
 
     assert not sol.includes_none
     assert mi.type_info(Union[int, None]).includes_none
+    assert mi.type_info(int | None).includes_none
 
 
 def test_int_literal():
@@ -370,6 +390,18 @@ def test_int_literal():
 
 def test_str_literal():
     assert mi.type_info(Literal["c", "a", "b"]) == mi.LiteralType(("a", "b", "c"))
+
+
+def test_bool_literal():
+    assert mi.type_info(Literal[True]) == mi.LiteralType((True,))
+    assert mi.type_info(Literal[True, False]) == mi.LiteralType((False, True))
+
+
+def test_mixed_literal():
+    # Literals may mix value types; `type_info` shouldn't crash trying to sort
+    # values of incomparable types (gh#1018).
+    assert mi.type_info(Literal[1, None]) == mi.LiteralType((None, 1))
+    assert mi.type_info(Literal[True, "yes"]) == mi.LiteralType((True, "yes"))
 
 
 def test_int_enum():
@@ -471,7 +503,7 @@ def test_struct_encode_name():
 def test_generic_struct():
     class Example(msgspec.Struct, Generic[T]):
         a: T
-        b: List[T]
+        b: list[T]
 
     sol = mi.StructType(
         Example,
@@ -528,7 +560,7 @@ def test_generic_namedtuple():
 
     class Example(NamedTuple, Generic[T]):
         a: T
-        b: List[T]
+        b: list[T]
 
     sol = mi.NamedTupleType(
         Example,
@@ -608,7 +640,7 @@ def test_generic_typeddict():
 
     class Example(TypedDict, Generic[T]):
         a: T
-        b: List[T]
+        b: list[T]
 
     sol = mi.TypedDictType(
         Example,
@@ -675,7 +707,7 @@ def test_generic_dataclass_or_attrs(module):
     @decorator
     class Example(Generic[T]):
         a: T
-        b: List[T]
+        b: list[T]
 
     sol = mi.DataclassType(
         Example,
@@ -701,20 +733,20 @@ def test_unset_fields(kind):
     if kind == "struct":
 
         class Ex(msgspec.Struct):
-            x: Union[int, msgspec.UnsetType] = msgspec.UNSET
+            x: int | msgspec.UnsetType = msgspec.UNSET
 
     elif kind == "dataclass":
 
         @dataclass
         class Ex:
-            x: Union[int, msgspec.UnsetType] = msgspec.UNSET
+            x: int | msgspec.UnsetType = msgspec.UNSET
 
     elif kind == "attrs":
         attrs = pytest.importorskip("attrs")
 
         @attrs.define
         class Ex:
-            x: Union[int, msgspec.UnsetType] = msgspec.UNSET
+            x: int | msgspec.UnsetType = msgspec.UNSET
 
     res = mi.type_info(Ex)
     assert res.fields == (mi.Field("x", "x", mi.IntType(), required=False),)
@@ -809,7 +841,7 @@ def test_multi_type_info():
 
     assert mi.multi_type_info([]) == ()
 
-    res = mi.multi_type_info([Example, List[Example]])
+    res = mi.multi_type_info([Example, list[Example]])
     assert res == (ex_type, mi.ListType(ex_type))
     assert res[0] is res[1].item_type
 

@@ -23,11 +23,11 @@ def main():
         {
             "title": f"Version {version}",
             "tag": version,
-            "body": re.sub(r"\{pr\}`(\d+)`", r"#\1", notes),
+            "body": re.sub(r"\{(?:pr|issue)\}`(\d+)`", r"#\1", notes),
         }
     )
 
-    url = f"https://github.com/jcrist/msgspec/releases/new?{params}"
+    url = f"https://github.com/msgspec/msgspec/releases/new?{params}"
     webbrowser.open_new_tab(url)
 
 

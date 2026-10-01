@@ -1,5 +1,9 @@
 name: Latest Supported Python
 description: Fetch the highest minor version of Python used in CI
+inputs:
+  github-token:
+    description: The token to use for the GitHub API (unused, kept for interface compatibility)
+    required: false
 outputs:
   version:
     description: The highest minor version of Python with a wheel
@@ -12,5 +16,5 @@ runs:
     id: python-version
     shell: bash
     run: |-
-      echo "version=3.14" >> $GITHUB_OUTPUT
-      echo "Python version: 3.14"
+      echo "version=3.15" >> $GITHUB_OUTPUT
+      echo "Python version: 3.15"

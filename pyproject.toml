@@ -19,6 +19,7 @@ requires-python = ">=3.8"
 maintainers = [
   { name = "Jim Crist-Harif", email = "jcristharif@gmail.com" },
   { name = "Ofek Lev", email = "oss@ofek.dev" },
+  { name = "Nikita Sobolev", email = "mail@sobolevn.me" },
 ]
 keywords = [
   "JSON",
@@ -32,6 +33,9 @@ keywords = [
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
+  "Environment :: WebAssembly :: Emscripten",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
   "Programming Language :: Python :: 3.8",
   "Programming Language :: Python :: 3.9",
   "Programming Language :: Python :: 3.10",
@@ -39,6 +43,9 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Topic :: Software Development :: Libraries",
 ]
 
 [project.optional-dependencies]
@@ -51,30 +58,38 @@ yaml = [
 ]
 
 [project.urls]
-Homepage = "https://jcristharif.com/msgspec/"
-"Issue Tracker" = "https://github.com/jcrist/msgspec/issues"
-Source = "https://github.com/jcrist/msgspec"
+Homepage = "https://msgspec.dev"
+"Issue Tracker" = "https://github.com/msgspec/msgspec/issues"
+Source = "https://github.com/msgspec/msgspec"
 
 [dependency-groups]
 bench = [
   "cattrs==24.1.2 ; python_version < '3.9'",
-  "cattrs==25.3.0 ; python_version >= '3.9'",
+  "cattrs==25.3.0 ; python_version >= '3.9' and python_version < '3.10'",
+  "cattrs==26.1.0 ; python_version >= '3.10'",
   "mashumaro==3.14 ; python_version < '3.9'",
-  "mashumaro==3.17 ; python_version >= '3.9'",
+  "mashumaro==3.17 ; python_version >= '3.9' and python_version < '3.10'",
+  "mashumaro==3.22 ; python_version >= '3.10'",
   "msgpack==1.1.1 ; python_version < '3.9'",
-  "msgpack==1.1.2 ; python_version >= '3.9'",
+  "msgpack==1.1.2 ; python_version >= '3.9' and python_version < '3.10'",
+  "msgpack==1.2.2 ; python_version >= '3.10'",
   "orjson==3.10.15 ; python_version < '3.9'",
-  "orjson==3.11.4 ; python_version >= '3.9'",
+  "orjson==3.11.4 ; python_version >= '3.9' and python_version < '3.10'",
+  "orjson==3.12.0 ; python_version >= '3.10'",
   "ormsgpack==1.5.0 ; python_version < '3.9'",
-  "ormsgpack==1.11.0 ; python_version >= '3.9'",
+  "ormsgpack==1.11.0 ; python_version >= '3.9' and python_version < '3.10'",
+  "ormsgpack==1.12.2 ; python_version >= '3.10'",
   "pydantic==2.10.6 ; python_version < '3.9'",
-  "pydantic==2.12.4 ; python_version >= '3.9'",
-  "python-rapidjson==1.22",
+  "pydantic==2.12.4 ; python_version >= '3.9' and python_version < '3.10'",
+  "pydantic==2.13.5 ; python_version >= '3.10'",
+  "python-rapidjson==1.22 ; python_version < '3.10'",
+  "python-rapidjson==1.25 ; python_version >= '3.10'",
   "pysimdjson==6.0.2 ; python_version < '3.9'",
   "pysimdjson==7.0.2 ; python_version >= '3.9'",
   "requests",
   "ujson==5.10.0 ; python_version < '3.9'",
-  "ujson==5.11.0 ; python_version >= '3.9'",
+  "ujson==5.11.0 ; python_version >= '3.9' and python_version < '3.10'",
+  "ujson==6.0.0 ; python_version >= '3.10'",
 ]
 dev = [
   "rust-just",
@@ -89,24 +104,28 @@ doc = [
 ]
 hooks = [
   "codespell==2.3.0 ; python_version < '3.9'",
-  "codespell==2.4.1 ; python_version >= '3.9'",
+  "codespell==2.4.3 ; python_version >= '3.9'",
   "prek>=0.2.13",
-  "ruff==0.14.1",
+  "ruff==0.16.7",
 ]
 test-base = [
   "pytest>=8,<8.4 ; python_version < '3.9'",
-  "pytest>=8 ; python_version >= '3.9'",
+  "pytest>=8,<9 ; python_version >= '3.9' and python_version < '3.10'",
+  "pytest>=9 ; python_version >= '3.10'",
+  "pytest-randomly",
 ]
 test-prof = [
   { include-group = "test-base" },
   "memray; sys_platform != 'win32'",
-  "pytest-benchmark",
+  "pytest-codspeed ; python_version >= '3.9'",
   "pytest-memray; sys_platform != 'win32'",
 ]
 test-typing = [
   { include-group = "test-base" },
-  "mypy",
-  "pyright",
+  "mypy==2.3.1 ; python_version >= '3.10'",
+  "mypy ; python_version < '3.10'",
+  "pyright==1.1.414",
+  "pyrefly==1.3.1",
 ]
 test-unit = [
   { include-group = "test-base" },
@@ -141,3 +160,35 @@ local_scheme = "no-local-version"
 
 [tool.uv.config-settings]
 editable_mode = "compat"
+
+[tool.mypy]
+extra_checks = true
+strict = true
+strict_equality_for_none = true
+warn_unreachable = true
+
+[tool.pyright]
+include = ["tests/typing/"]
+# Strict mode:
+typeCheckingMode = "strict"
+reportImplicitStringConcatenation = "error"
+reportUninitializedInstanceVariable = "error"
+reportUnnecessaryTypeIgnoreComment = "error"
+# Don't use '# type: ignore' to suppress with pyright:
+enableTypeIgnoreComments = false
+# Don't report unused variables and classes:
+reportUnusedVariable = false
+reportUnusedClass = false
+reportPrivateUsage = false
+
+[tool.pyrefly]
+project-includes = ["tests/typing/"]
+# Strict mode:
+preset = 'strict'
+min-severity = 'warn'
+# Don't use '# type: ignore' to suppress with pyright:
+enabled-ignores = ["pyrefly"]
+
+[tool.pyrefly.errors]
+# Do not require type annotations for `lambda` functions:
+implicit-any-lambda = false

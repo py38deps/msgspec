@@ -13,23 +13,13 @@ import sys
 import uuid
 from dataclasses import dataclass
 from decimal import Decimal
-from typing import (
-    Any,
-    Dict,
-    FrozenSet,
-    List,
-    Literal,
-    NamedTuple,
-    Optional,
-    Set,
-    Tuple,
-    TypedDict,
-    Union,
-)
+from typing import Annotated, Any, Literal, NamedTuple, TypedDict, Union
 
 import pytest
 
 import msgspec
+
+from .utils import emscripten_stack_limited
 
 UTC = datetime.timezone.utc
 
@@ -62,8 +52,8 @@ class PersonArray(msgspec.Struct, array_like=True):
 
 
 class Node(msgspec.Struct):
-    left: Optional[Node] = None
-    right: Optional[Node] = None
+    left: Node | None = None
+    right: Node | None = None
 
 
 class Custom:
@@ -100,7 +90,7 @@ class TestInvalidJSONTypes:
         with pytest.raises(
             msgspec.ValidationError, match="Expected `array`, got `str`"
         ):
-            msgspec.json.decode(b'{"x": 1}', type=Dict[Tuple[int, int], int])
+            msgspec.json.decode(b'{"x": 1}', type=dict[tuple[int, int], int])
 
 
 class TestEncodeFunction:
@@ -114,7 +104,7 @@ class TestEncodeFunction:
     def test_encode_large_object(self):
         """Check that buffer resize works"""
         data = "x" * 4097
-        assert msgspec.json.encode(data) == f'"{data}"'.encode("utf-8")
+        assert msgspec.json.encode(data) == f'"{data}"'.encode()
 
     def test_encode_no_enc_hook(self):
         class Foo:
@@ -184,13 +174,14 @@ class TestEncoderMisc:
 
     def rec_obj4(self):
         class Box(msgspec.Struct):
-            a: "Box"
+            a: Box
 
         o = Box(None)
         o.a = o
         return o
 
     @pytest.mark.parametrize("case", [1, 2, 3, 4])
+    @emscripten_stack_limited
     def test_encode_infinite_recursive_object_errors(self, case):
         enc = msgspec.json.Encoder()
         o = getattr(self, "rec_obj%d" % case)()
@@ -253,6 +244,7 @@ class TestEncoderMisc:
         res = json.loads(msg)
         assert res == {"type": "Node", "a": {"type": "Node", "a": 1}}
 
+    @emscripten_stack_limited
     def test_encode_enc_hook_recursion_error(self):
         enc = msgspec.json.Encoder(enc_hook=lambda x: x)
 
@@ -267,6 +259,9 @@ class TestEncoderMisc:
 
         with pytest.raises(TypeError):
             enc.encode_into(1, bytearray(), "bad")
+
+        with pytest.raises(TypeError):
+            enc.encode_into(1, bytearray(), None)
 
         with pytest.raises(ValueError, match="offset"):
             enc.encode_into(1, bytearray(), -2)
@@ -389,10 +384,10 @@ class TestDecodeFunction:
             assert msgspec.json.decode("[1, 2, 3")
 
     def test_decode_type_keyword(self):
-        assert msgspec.json.decode(b"[1, 2, 3]", type=Set[int]) == {1, 2, 3}
+        assert msgspec.json.decode(b"[1, 2, 3]", type=set[int]) == {1, 2, 3}
 
         with pytest.raises(msgspec.ValidationError):
-            assert msgspec.json.decode(b"[1, 2, 3]", type=Set[str])
+            assert msgspec.json.decode(b"[1, 2, 3]", type=set[str])
 
     def test_decode_type_any(self):
         assert msgspec.json.decode(b"[1, 2, 3]", type=Any) == [1, 2, 3]
@@ -430,7 +425,7 @@ class TestDecodeFunction:
             msgspec.json.decode()
 
         with pytest.raises(TypeError, match="Extra positional arguments"):
-            msgspec.json.decode(buf, List[int])
+            msgspec.json.decode(buf, list[int])
 
         with pytest.raises(TypeError, match="Extra positional arguments"):
             msgspec.json.decode(buf, 2, 3)
@@ -439,7 +434,7 @@ class TestDecodeFunction:
             msgspec.json.decode(buf, bad=1)
 
         with pytest.raises(TypeError, match="Extra keyword arguments"):
-            msgspec.json.decode(buf, type=List[int], extra=1)
+            msgspec.json.decode(buf, type=list[int], extra=1)
 
     def test_decode_with_trailing_characters_errors(self):
         with pytest.raises(msgspec.DecodeError):
@@ -462,7 +457,7 @@ class TestDecoderMisc:
         assert dec.type is int
 
     def test_decoder_repr(self):
-        typ = List[Dict[str, float]]
+        typ = list[dict[str, float]]
         dec = msgspec.json.Decoder(typ)
         assert repr(dec) == f"msgspec.json.Decoder({typ!r})"
 
@@ -560,7 +555,7 @@ class TestBoolAndNone:
         with pytest.raises(
             msgspec.ValidationError, match="Expected `int | null`, got `str`"
         ):
-            msgspec.json.decode(b'"test"', type=Union[int, None])
+            msgspec.json.decode(b'"test"', type=int | None)
 
     def test_encode_true(self):
         assert msgspec.json.encode(True) == b"true"
@@ -851,6 +846,7 @@ class TestDatetime:
                 2023, 1, 2, 3, 4, 5, 678, zoneinfo.ZoneInfo("America/Chicago")
             )
         except zoneinfo.ZoneInfoNotFoundError:
+            # Some envs in CI do not have `tzdata`:
             pytest.skip(reason="Failed to load timezone")
         sol = msgspec.json.encode(x.isoformat())
         res = msgspec.json.encode(x)
@@ -869,7 +865,7 @@ class TestDatetime:
     def test_decode_datetime_utc(self, dt, suffix):
         dt += suffix
         exp = datetime.datetime.fromisoformat(dt.replace("Z", "+00:00"))
-        s = f'"{dt}"'.encode("utf-8")
+        s = f'"{dt}"'.encode()
         res = msgspec.json.decode(s, type=datetime.datetime)
         assert res == exp
 
@@ -890,7 +886,7 @@ class TestDatetime:
     @pytest.mark.parametrize("minute", [0, 30])
     def test_decode_datetime_with_timezone(self, dt, sign, hour, minute):
         s = f"{dt}{sign}{hour:02}:{minute:02}"
-        json_s = f'"{s}"'.encode("utf-8")
+        json_s = f'"{s}"'.encode()
         exp = datetime.datetime.fromisoformat(s)
         res = msgspec.json.decode(json_s, type=datetime.datetime)
         assert res == exp
@@ -923,7 +919,7 @@ class TestDatetime:
     )
     def test_decode_datetime_naive(self, s):
         sol = datetime.datetime.fromisoformat(s)
-        msg = f'"{s}"'.encode("utf-8")
+        msg = f'"{s}"'.encode()
         res = msgspec.json.decode(msg, type=datetime.datetime)
         assert sol == res
 
@@ -931,7 +927,7 @@ class TestDatetime:
     @pytest.mark.parametrize("z", ["Z", "z"])
     def test_decode_datetime_not_case_sensitive(self, t, z):
         """Both T & Z can be upper/lowercase"""
-        s = f'"0001-02-03{t}04:05:06.000007{z}"'.encode("utf-8")
+        s = f'"0001-02-03{t}04:05:06.000007{z}"'.encode()
         exp = datetime.datetime(1, 2, 3, 4, 5, 6, 7, UTC)
         res = msgspec.json.decode(s, type=datetime.datetime)
         assert res == exp
@@ -1152,6 +1148,7 @@ class TestIntegers:
                 orig = sys.get_int_max_str_digits()
                 sys.set_int_max_str_digits(max_length)
             except AttributeError:
+                # TODO: remove when 3.10 support is dropped:
                 pytest.skip(reason="sys.set_int_max_str_digits is not available")
 
             def cleanup():
@@ -1767,21 +1764,21 @@ class TestDecimal:
             (bigint, Decimal, Decimal),
             (double, Decimal, Decimal),
             (extdouble, Decimal, Decimal),
-            (posint, Union[Decimal, int], int),
-            (negint, Union[Decimal, int], int),
-            (bigint, Union[Decimal, int], int),
-            (double, Union[Decimal, int], Decimal),
-            (extdouble, Union[Decimal, int], Decimal),
-            (posint, Union[Decimal, float], float),
-            (negint, Union[Decimal, float], float),
-            (bigint, Union[Decimal, float], float),
-            (double, Union[Decimal, float], float),
-            (extdouble, Union[Decimal, float], float),
-            (posint, Union[Decimal, int, float], int),
-            (negint, Union[Decimal, int, float], int),
-            (bigint, Union[Decimal, int, float], int),
-            (double, Union[Decimal, int, float], float),
-            (extdouble, Union[Decimal, int, float], float),
+            (posint, Decimal | int, int),
+            (negint, Decimal | int, int),
+            (bigint, Decimal | int, int),
+            (double, Decimal | int, Decimal),
+            (extdouble, Decimal | int, Decimal),
+            (posint, Decimal | float, float),
+            (negint, Decimal | float, float),
+            (bigint, Decimal | float, float),
+            (double, Decimal | float, float),
+            (extdouble, Decimal | float, float),
+            (posint, Decimal | int | float, int),
+            (negint, Decimal | int | float, int),
+            (bigint, Decimal | int | float, int),
+            (double, Decimal | int | float, float),
+            (extdouble, Decimal | int | float, float),
         ]
 
         for msg, request_type, out_type in cases:
@@ -1815,25 +1812,25 @@ class TestSequences:
         assert type(x) == type(x2)
 
     def test_decode_typed_list(self):
-        dec = msgspec.json.Decoder(List[int])
+        dec = msgspec.json.Decoder(list[int])
         assert dec.decode(b"[]") == []
         assert dec.decode(b"[1]") == [1]
         assert dec.decode(b"[1,2]") == [1, 2]
 
     def test_decode_typed_set(self):
-        dec = msgspec.json.Decoder(Set[int])
+        dec = msgspec.json.Decoder(set[int])
         assert dec.decode(b"[]") == set()
         assert dec.decode(b"[1]") == {1}
         assert dec.decode(b"[1,2]") == {1, 2}
 
     def test_decode_typed_frozenset(self):
-        dec = msgspec.json.Decoder(FrozenSet[int])
+        dec = msgspec.json.Decoder(frozenset[int])
         assert dec.decode(b"[]") == frozenset()
         assert dec.decode(b"[1]") == frozenset({1})
         assert dec.decode(b"[1,2]") == frozenset({1, 2})
 
     def test_decode_typed_vartuple(self):
-        dec = msgspec.json.Decoder(Tuple[int, ...])
+        dec = msgspec.json.Decoder(tuple[int, ...])
         assert dec.decode(b"[]") == ()
         assert dec.decode(b"[1]") == (1,)
         assert dec.decode(b"[1,2]") == (
@@ -1841,7 +1838,7 @@ class TestSequences:
             2,
         )
 
-    @pytest.mark.parametrize("type", [List[int], Set[int], Tuple[int, ...]])
+    @pytest.mark.parametrize("type", [list[int], set[int], tuple[int, ...]])
     @pytest.mark.parametrize("bad_index", [0, 9, 10, 91, 1234])
     def test_decode_typed_list_wrong_element_type(self, type, bad_index):
         dec = msgspec.json.Decoder(type)
@@ -1863,13 +1860,13 @@ class TestSequences:
             (b"[1, 2 3]", r"expected ',' or ']'"),
         ],
     )
-    @pytest.mark.parametrize("type", [list, set, tuple, Tuple[int, int, int]])
+    @pytest.mark.parametrize("type", [list, set, tuple, tuple[int, int, int]])
     def test_decode_sequence_malformed(self, s, error, type):
         with pytest.raises(msgspec.DecodeError, match=error):
             msgspec.json.decode(s, type=type)
 
     def test_decode_fixtuple_any(self):
-        dec = msgspec.json.Decoder(Tuple[Any, Any, Any])
+        dec = msgspec.json.Decoder(tuple[Any, Any, Any])
         x = (1, "two", False)
         res = dec.decode(b'[1, "two", false]')
         assert res == x
@@ -1883,7 +1880,7 @@ class TestSequences:
             dec.decode(b'[1, "two"]')
 
     def test_decode_fixtuple_typed(self):
-        dec = msgspec.json.Decoder(Tuple[int, str, bool])
+        dec = msgspec.json.Decoder(tuple[int, str, bool])
         x = (1, "two", False)
         res = dec.decode(b'[1, "two", false]')
         assert res == x
@@ -1963,21 +1960,21 @@ class TestDict:
         assert x == x2
 
     def test_decode_dict_wrong_element_type(self):
-        dec = msgspec.json.Decoder(Dict[str, int])
+        dec = msgspec.json.Decoder(dict[str, int])
         with pytest.raises(
             msgspec.ValidationError, match=r"Expected `int`, got `str` - at `\$\[...\]`"
         ):
             dec.decode(b'{"a": "bad"}')
 
     def test_decode_dict_literal_key(self):
-        dec = msgspec.json.Decoder(Dict[Literal["a", "b"], int])
+        dec = msgspec.json.Decoder(dict[Literal["a", "b"], int])
         assert dec.decode(b'{"a": 1, "b": 2}') == {"a": 1, "b": 2}
 
         with pytest.raises(msgspec.ValidationError, match="Invalid enum value 'c'"):
             dec.decode(b'{"a": 1, "c": 2}')
 
     def test_decode_dict_enum_key(self):
-        dec = msgspec.json.Decoder(Dict[FruitStr, int])
+        dec = msgspec.json.Decoder(dict[FruitStr, int])
         assert dec.decode(b'{"apple": 1, "banana": 2}') == {
             FruitStr.APPLE: 1,
             FruitStr.BANANA: 2,
@@ -1995,7 +1992,7 @@ class TestDict:
             pytest.skip("Annotated types not available")
 
         dec = msgspec.json.Decoder(
-            Dict[Annotated[str, msgspec.Meta(min_length=3)], int]
+            dict[Annotated[str, msgspec.Meta(min_length=3)], int]
         )
         assert dec.decode(b'{"abc": 1, "def": 2}') == {"abc": 1, "def": 2}
 
@@ -2034,6 +2031,7 @@ class TestDict:
             1,
             1.5,
             FruitInt.APPLE,
+            FruitStr.APPLE,
             uuid.uuid4(),
             datetime.datetime.now(),
             datetime.date.today(),
@@ -2049,11 +2047,50 @@ class TestDict:
         res = msgspec.json.encode(msg)
         assert res == sol
 
-        msg2 = msgspec.json.decode(sol, type=Dict[type(key), int])
+        msg2 = msgspec.json.decode(sol, type=dict[type(key), int])
         assert msg == msg2
 
+    def test_encode_dict_plain_enum_str_key(self):
+        # Regression: a plain `enum.Enum` with str values, used as a dict key.
+        # json.encode previously raised "Only dicts with str-like or
+        # number-like keys are supported", even though `dict[FruitStr, int]` is
+        # an accepted decode type and both msgpack and to_builtins handle it.
+        msg = {FruitStr.APPLE: 1, FruitStr.BANANA: 2}
+
+        res = msgspec.json.encode(msg)
+        assert res == b'{"apple":1,"banana":2}'
+
+        # JSON must agree with the msgpack encoder and with to_builtins.
+        expected = {"apple": 1, "banana": 2}
+        assert msgspec.msgpack.decode(msgspec.msgpack.encode(msg)) == expected
+        assert msgspec.to_builtins(msg, str_keys=True) == expected
+
+        # Full round-trip through the accepted decode type.
+        assert msgspec.json.decode(res, type=dict[FruitStr, int]) == msg
+
+    def test_encode_dict_plain_enum_str_key_nested(self):
+        # The same must hold when the dict is nested inside a Struct field.
+        class Rec(msgspec.Struct):
+            fruits: dict[FruitStr, int]
+
+        rec = Rec(fruits={FruitStr.APPLE: 5})
+        res = msgspec.json.encode(rec)
+        assert res == b'{"fruits":{"apple":5}}'
+        assert msgspec.json.decode(res, type=Rec) == rec
+
+    def test_encode_dict_plain_int_enum_key(self):
+        # A plain Enum with int values (not IntEnum) must keep round-tripping.
+        class IntVals(enum.Enum):
+            A = 1
+            B = 2
+
+        msg = {IntVals.A: 9, IntVals.B: 8}
+        res = msgspec.json.encode(msg)
+        assert res == b'{"1":9,"2":8}'
+        assert msgspec.json.decode(res, type=dict[IntVals, int]) == msg
+
     def test_decode_dict_int_enum_key(self):
-        dec = msgspec.json.Decoder(Dict[FruitInt, int])
+        dec = msgspec.json.Decoder(dict[FruitInt, int])
         assert dec.decode(b'{"-1": 10, "2": 20}') == {
             FruitInt.APPLE: 10,
             FruitInt.BANANA: 20,
@@ -2070,42 +2107,37 @@ class TestDict:
 
         for x in [-(2**63) - 1, 2**64]:
             s = msgspec.json.encode({x: "a"})
-            assert s == f'{{"{x}":"a"}}'.encode("utf-8")
+            assert s == f'{{"{x}":"a"}}'.encode()
 
     def test_decode_dict_int_key(self):
         msg = {-(2**63): "a", 0: "b", 2**64 - 1: "c"}
         buf = msgspec.json.encode(msg)
-        res = msgspec.json.decode(buf, type=Dict[int, str])
+        res = msgspec.json.decode(buf, type=dict[int, str])
         assert res == msg
 
     @pytest.mark.parametrize("s", ['""', '"-"', '"a"', '"-a"', '"01"', '"1a"'])
     def test_decode_dict_int_key_malformed(self, s):
         bad = ("{%s: 1}" % s).encode("utf-8")
         with pytest.raises(msgspec.ValidationError, match="Expected `int`, got `str`"):
-            msgspec.json.decode(bad, type=Dict[int, int])
+            msgspec.json.decode(bad, type=dict[int, int])
 
     @pytest.mark.parametrize("x", [-(2**63) - 1, 2**64, 2**65])
     def test_decode_dict_big_int(self, x):
         msg = {str(x): 1}
         buf = msgspec.json.encode(msg)
-        res = msgspec.json.decode(buf, type=Dict[int, int])
+        res = msgspec.json.decode(buf, type=dict[int, int])
         assert res == {x: 1}
         assert type(list(res)[0]) is int
 
     def test_decode_dict_int_key_constraints(self):
-        try:
-            from typing import Annotated
-        except ImportError:
-            pytest.skip("Annotated types not available")
-
-        dec = msgspec.json.Decoder(Dict[Annotated[int, msgspec.Meta(ge=3)], int])
+        dec = msgspec.json.Decoder(dict[Annotated[int, msgspec.Meta(ge=3)], int])
         assert dec.decode(b'{"4": 1, "5": 2}') == {4: 1, 5: 2}
 
         with pytest.raises(msgspec.ValidationError, match="Expected `int` >= 3"):
             dec.decode(b'{"2": 1}')
 
     def test_decode_dict_int_literal_key(self):
-        dec = msgspec.json.Decoder(Dict[Literal[-1, 2], int])
+        dec = msgspec.json.Decoder(dict[Literal[-1, 2], int])
         assert dec.decode(b'{"-1": 10, "2": 20}') == {-1: 10, 2: 20}
 
         with pytest.raises(msgspec.ValidationError, match="Invalid enum value 3"):
@@ -2128,13 +2160,13 @@ class TestDict:
         msg = {"1.5": 1, "inf": 2, "-inf": 3, "0": 4, "-1.5e12": 5, "123": 6}
         buf = msgspec.json.encode(msg)
         sol = {float(k): v for k, v in msg.items()}
-        res = msgspec.json.decode(buf, type=Dict[float, int])
+        res = msgspec.json.decode(buf, type=dict[float, int])
         assert res == sol
 
     def test_decode_dict_int_or_float_key(self):
         buf = b'{"1.5": "a", "123": "b"}'
         sol = {1.5: "a", 123: "b"}
-        res = msgspec.json.decode(buf, type=Dict[Union[int, float], str])
+        res = msgspec.json.decode(buf, type=dict[int | float, str])
         assert res == sol
         assert type(list(res.keys())[-1]) is int
 
@@ -2161,6 +2193,12 @@ class TestDict:
         with pytest.raises(TypeError):
             msgspec.json.encode({Custom("x"): 1}, enc_hook=enc_hook)
 
+    @emscripten_stack_limited
+    def test_encode_dict_custom_key_recursion_error(self):
+        class Custom:
+            def __init__(self, value):
+                self.value = value
+
         with pytest.raises(RecursionError):
             msgspec.json.encode({Custom("x"): 1}, enc_hook=lambda x: x)
 
@@ -2182,7 +2220,7 @@ class TestDict:
 
         msg = b'{"a":1,"b":2}'
 
-        obj = msgspec.json.decode(msg, type=Dict[Custom, int], dec_hook=dec_hook)
+        obj = msgspec.json.decode(msg, type=dict[Custom, int], dec_hook=dec_hook)
         assert obj == {Custom("a"): 1, Custom("b"): 2}
 
     @pytest.mark.parametrize(
@@ -2375,7 +2413,7 @@ class TestStruct:
             msgspec.ValidationError,
             match=r"Object missing required field `age` - at `\$\[0\]`",
         ):
-            msgspec.json.decode(bad, type=List[Person])
+            msgspec.json.decode(bad, type=list[Person])
 
     def test_decode_struct_fields_mixed_order(self):
         class Test(msgspec.Struct):
@@ -2454,10 +2492,10 @@ class TestStruct:
         class Test(msgspec.Struct, array_like=array_like):
             x: Any
             y: Any
-            z: Tuple = ()
+            z: tuple = ()
 
         enc = msgspec.json.Encoder()
-        dec = msgspec.json.Decoder(List[Test])
+        dec = msgspec.json.Decoder(list[Test])
 
         ts = [
             Test(1, 2),
@@ -2479,7 +2517,7 @@ class TestStruct:
             x: Any
             y: Any
 
-        dec = msgspec.json.Decoder(List[Test])
+        dec = msgspec.json.Decoder(list[Test])
 
         ts = [
             Test(1, 2),
@@ -2660,7 +2698,7 @@ class TestStructUnion:
             pass
 
         with pytest.raises(msgspec.DecodeError, match=error):
-            msgspec.json.decode(s, type=Union[Test1, Test2])
+            msgspec.json.decode(s, type=Test1 | Test2)
 
     @pytest.mark.parametrize(
         "s, error",
@@ -2689,7 +2727,7 @@ class TestStructUnion:
             pass
 
         with pytest.raises(msgspec.DecodeError, match=error):
-            msgspec.json.decode(s, type=Union[Test1, Test2])
+            msgspec.json.decode(s, type=Test1 | Test2)
 
     @pytest.mark.parametrize(
         "s",
@@ -2707,7 +2745,7 @@ class TestStructUnion:
         class Test2(msgspec.Struct, tag=True):
             pass
 
-        res = msgspec.json.decode(s, type=Union[Test1, Test2])
+        res = msgspec.json.decode(s, type=Test1 | Test2)
         assert res == Test1(1, 2)
 
     @pytest.mark.parametrize(
@@ -2726,7 +2764,7 @@ class TestStructUnion:
         class Test2(msgspec.Struct, tag=123):
             pass
 
-        res = msgspec.json.decode(s, type=Union[Test1, Test2])
+        res = msgspec.json.decode(s, type=Test1 | Test2)
         assert res == Test1(1, 2)
 
 
@@ -2801,7 +2839,7 @@ class TestStructArray:
             dec.decode(bad)
 
         # Extra fields ignored
-        dec2 = msgspec.json.Decoder(List[PersonArray])
+        dec2 = msgspec.json.Decoder(list[PersonArray])
         msg = msgspec.json.encode(
             [
                 ("harry", "potter", 13, False, 1, 2, 3, 4),
@@ -2956,7 +2994,7 @@ class TestStructArrayUnion:
             pass
 
         with pytest.raises(msgspec.DecodeError, match=error):
-            msgspec.json.decode(s, type=Union[Test1, Test2])
+            msgspec.json.decode(s, type=Test1 | Test2)
 
     @pytest.mark.parametrize(
         "s, error",
@@ -2985,7 +3023,7 @@ class TestStructArrayUnion:
             pass
 
         with pytest.raises(msgspec.DecodeError, match=error):
-            msgspec.json.decode(s, type=Union[Test1, Test2])
+            msgspec.json.decode(s, type=Test1 | Test2)
 
     def test_decode_struct_array_union_ignores_whitespace(self):
         s = b'  [  "Test1"  ,  1  ,  2  ]  '
@@ -2997,7 +3035,7 @@ class TestStructArrayUnion:
         class Test2(msgspec.Struct, tag=True, array_like=True):
             pass
 
-        res = msgspec.json.decode(s, type=Union[Test1, Test2])
+        res = msgspec.json.decode(s, type=Test1 | Test2)
         assert res == Test1(1, 2)
 
     def test_decode_struct_array_union_int_tag_ignores_whitespace(self):
@@ -3010,7 +3048,7 @@ class TestStructArrayUnion:
         class Test2(msgspec.Struct, tag=-123, array_like=True):
             pass
 
-        res = msgspec.json.decode(s, type=Union[Test1, Test2])
+        res = msgspec.json.decode(s, type=Test1 | Test2)
         assert res == Test1(1, 2)
 
 
@@ -3068,7 +3106,7 @@ class TestRaw:
         msg = '[{"x": 1}]' if wrap else '{"x": 1}'
         c = sys.getrefcount(msg)
         if wrap:
-            [r] = msgspec.json.decode(msg, type=List[msgspec.Raw])
+            [r] = msgspec.json.decode(msg, type=list[msgspec.Raw])
         else:
             r = msgspec.json.decode(msg, type=msgspec.Raw)
         assert bytes(r) == b'{"x": 1}'
@@ -3079,14 +3117,14 @@ class TestRaw:
 
     def test_raw_in_union_works_but_doesnt_change_anything(self):
         class Test(msgspec.Struct):
-            x: Union[int, str, msgspec.Raw]
+            x: int | str | msgspec.Raw
 
         r = msgspec.json.decode(b'{"x": 1}', type=Test)
         assert r == Test(1)
 
     def test_raw_can_be_mixed_with_custom_type(self):
         class Test(msgspec.Struct):
-            x: Union[Custom, msgspec.Raw]
+            x: Custom | msgspec.Raw
 
         def dec_hook(typ, obj):
             assert typ is Custom

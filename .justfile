@@ -84,10 +84,14 @@ alias test := test-unit
 
 # Run type checker compatibility tests.
 [group: "Testing"]
-test-typing *args: (
-  env-run "test"
-  "pytest -o testpaths=tests/typing"
-  args
+test-typing: (
+  env-run "test" "mypy tests/typing"
+) (
+  env-run "test" "pyright tests/typing"
+) (
+  env-run "test" "pyrefly check tests/typing"
+) (
+  env-run "test" "python scripts/stubtest.py"
 )
 
 # Run doctests.
@@ -102,7 +106,7 @@ test-doc *args: (
 [group: "Documentation"]
 doc-build: (
   env-run "doc"
-  "sphinx-build -b html docs site --fail-on-warning"
+  "sphinx-build -d .doctrees -b html docs site --fail-on-warning"
 )
 
 # Serve the documentation.
