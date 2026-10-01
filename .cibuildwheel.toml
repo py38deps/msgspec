@@ -1,5 +1,6 @@
 [tool.cibuildwheel]
-# cp315 (3.15) is left out because it needs cibuildwheel 4.x, which dropped Python 3.8.
+# cp315 is built in a separate pass with cibuildwheel 4.x (see build-wheels.yml),
+# because 4.x dropped Python 3.8 while 3.x doesn't know cp315.
 build = "cp38-* cp39-* cp310-* cp311-* cp312-* cp313-* cp314-* cp314t-*"
 build-frontend = "build[uv]"
 test-command = "pytest {project}/tests/unit"
