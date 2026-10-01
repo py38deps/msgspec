@@ -1,6 +1,9 @@
 name: Build and Test
 
 on:
+  push:
+    branches:
+    - main
   workflow_dispatch:
     inputs:
       version:
@@ -182,13 +185,4 @@ jobs:
       contents: read
     with:
       sdist-name: "${{ needs.prepare.outputs.sdist-name }}"
-      build-all: ${{ inputs.build-all || false }}
-
-  profile:
-    name: Run profiling tests on Python ${{ needs.prepare.outputs.latest-supported-python }}
-    needs:
-    - prepare
-    - build-wheels
-    uses: ./.github/workflows/profile.yml
-    with:
-      python: "${{ needs.prepare.outputs.latest-supported-python }}"
+      build-all: ${{ github.event_name == 'push' || inputs.build-all || false }}
