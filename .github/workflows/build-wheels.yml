@@ -28,9 +28,14 @@ jobs:
         - target: Linux (x86_64)
           os: ubuntu-latest
           archs: x86_64
-        # Linux (riscv64) is skipped on this fork: it needs GitHub's RISC-V
-        # hosted runner, which the fork has no access to, so the job would
-        # stay queued forever.
+        # Native RISC-V runners come from the RISE RISC-V Runners GitHub App.
+        # The riscv64 images pinned by cibuildwheel 3.4.1 have no uv, which the
+        # `build[uv]` frontend requires, so this target builds with `build`.
+        - target: Linux (riscv64)
+          os: ubuntu-24.04-riscv
+          archs: riscv64
+          required-label: build-riscv64
+          cibw_build_frontend: "build"
         - target: macOS (arm64)
           os: macos-latest
           archs: arm64
@@ -49,11 +54,25 @@ jobs:
           cibw_platform: pyodide
           # Pyodide is built for cp314 only, which cibuildwheel 3.x doesn't know
           cibw_version: "4.2.0"
+        exclude:
+        - wheel:
+            target: Linux (riscv64)
+            os: ubuntu-24.04-riscv
+            archs: riscv64
+            # Unlabeled PRs match riscv64's required-label; otherwise empty keeps it.
+            required-label: >-
+              ${{
+                github.event_name == 'pull_request' &&
+                !contains(github.event.pull_request.labels.*.name, 'build-riscv64') &&
+                'build-riscv64' ||
+                ''
+              }}
 
     env:
       CIBW_ARCHS: "${{ matrix.wheel.archs }}"
       CIBW_PLATFORM: "${{ matrix.wheel.cibw_platform || 'auto' }}"
       CIBW_SKIP: "${{ !inputs.build-all && '*-musllinux_*' || '' }}"
+      CIBW_BUILD_FRONTEND: "${{ matrix.wheel.cibw_build_frontend || 'build[uv]' }}"
       # cibuildwheel 4.x dropped Python 3.8 support, and this backport still
       # ships cp38 wheels, so use the last 3.x release by default.
       CIBW_VERSION: "${{ matrix.wheel.cibw_version || '3.4.1' }}"
