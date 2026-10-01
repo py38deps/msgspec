@@ -6,8 +6,13 @@ import enum
 import sys
 import uuid
 from collections.abc import Iterable
-from types import UnionType as _types_UnionType
-from typing import Any, Final, Literal, TypeVar, Union
+
+try:
+    from types import UnionType as _types_UnionType  # type: ignore
+except Exception:
+    _types_UnionType = type("UnionType", (), {})  # type: ignore
+
+from typing import Any, Final, Literal, Tuple, TypeVar, Union
 
 try:
     from typing import TypeAliasType as _TypeAliasType  # type: ignore
@@ -770,7 +775,7 @@ class _Translator:
         # First construct a decoder to validate the types are valid
         from ._core import MsgpackDecoder
 
-        MsgpackDecoder(tuple[self.types])
+        MsgpackDecoder(Tuple[self.types])
         return tuple(self.translate(t) for t in self.types)
 
     def translate(self, typ):

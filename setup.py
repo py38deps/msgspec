@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from setuptools import setup
+from setuptools.command.build_ext import build_ext
 from setuptools.extension import Extension
 
 # Check for 32-bit windows builds, which currently aren't supported. We can't
@@ -48,13 +49,31 @@ elif sys.platform != "win32":
         extra_link_args.extend(["-flto=thin"])
 
 # from https://py-free-threading.github.io/faq/#im-trying-to-build-a-library-on-windows-but-msvc-says-c-atomic-support-is-not-enabled
-if sys.platform == "win32":
-    extra_compile_args.extend(
-        [
-            "/std:c11",
-            "/experimental:c11atomics",
-        ]
-    )
+# These flags are MSVC specific; other compilers used on Windows (e.g. mingw32,
+# which this fork uses for local builds) reject them. They also end up on the
+# link line on Python 3.8, where distutils reuses `extra_compile_args` for
+# linking.
+MSVC_COMPILE_ARGS = [
+    "/std:c11",
+    "/experimental:c11atomics",
+]
+
+
+class BuildExt(build_ext):
+    def build_extensions(self):
+        compiler_type = self.compiler.compiler_type
+        for ext in self.extensions:
+            if compiler_type == "msvc":
+                ext.extra_compile_args.extend(MSVC_COMPILE_ARGS)
+            elif sys.platform == "win32":
+                # mingw-w64 does not define `_WIN64` before Python's pyconfig.h
+                # is processed, so `SIZEOF_VOID_P` (and with it PyLong_SHIFT,
+                # which describes CPython's PyLongObject layout) falls back to
+                # the 32-bit value. Define it so the extension matches the
+                # 64-bit interpreter it is built against.
+                ext.extra_compile_args.append("-DMS_WIN64")
+        super().build_extensions()
+
 
 libraries = []
 if sys.platform != "win32":
@@ -71,5 +90,6 @@ ext_modules = [
 ]
 
 setup(
+    cmdclass={"build_ext": BuildExt},
     ext_modules=ext_modules,
 )

@@ -154,6 +154,25 @@ PyDict_GetItemRef(PyObject *mp, PyObject *key, PyObject **result)
 }
 #endif // PY_VERSION_HEX < 0x030D00A1
 
+#if !PY310_PLUS
+/* PyModule_AddObjectRef was added in 3.10; on older versions it can be
+ * emulated on top of PyModule_AddObject, which steals the reference. */
+static inline int
+PyModule_AddObjectRef(PyObject *mod, const char *name, PyObject *value)
+{
+    if (value == NULL) {
+        PyErr_SetString(PyExc_SystemError, "PyModule_AddObjectRef() received NULL value");
+        return -1;
+    }
+    Py_INCREF(value);
+    if (PyModule_AddObject(mod, name, value) < 0) {
+        Py_DECREF(value);
+        return -1;
+    }
+    return 0;
+}
+#endif // !PY310_PLUS
+
 #if PY315_PLUS
 static inline PyObject *
 _PyFrozenDict_NewSteal(PyObject *dict) {
@@ -5080,7 +5099,13 @@ normalize_types_generic_alias(TypeNodeCollectState *state, PyObject **t, PyObjec
     //
     // replace '*t' with a new reference on success (dropping the original), or
     // return -1 with an exception set.
+#if PY39_PLUS
     if (MS_LIKELY(Py_TYPE(*t) != &Py_GenericAliasType)) return 0;
+#else
+    /* `types.GenericAlias` doesn't exist before Python 3.9, so there's
+     * nothing to normalize. */
+    return 0;
+#endif
     PyObject *converted = PyObject_CallFunctionObjArgs(
         state->mod->convert_generic_alias, origin, args, NULL
     );

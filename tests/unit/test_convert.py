@@ -11,11 +11,17 @@ from dataclasses import dataclass, field
 from typing import (
     Any,
     Dict,
+    FrozenSet,
     Generic,
+    List,
     Literal,
     NamedTuple,
+    Optional,
+    Set,
+    Tuple,
     TypedDict,
     TypeVar,
+    Union,
 )
 
 import pytest
@@ -56,6 +62,7 @@ if sys.version_info >= (3, 15):
     # and to not raise `F821`:
     from builtins import frozendict
 
+PY310 = sys.version_info[:2] >= (3, 10)
 PY311 = sys.version_info[:2] >= (3, 11)
 PY312 = sys.version_info[:2] >= (3, 12)
 
@@ -288,7 +295,7 @@ class TestConvert:
 
     def test_unsupported_output_type(self):
         with pytest.raises(TypeError, match="more than one array-like"):
-            convert({}, list[int] | tuple[str, ...])
+            convert({}, Union[List[int], Tuple[str, ...]])
 
     @pytest.mark.parametrize(
         "val, got",
@@ -458,7 +465,7 @@ class TestFloat:
         with pytest.raises(ValidationError, match="Number out of range"):
             convert(big, float, strict=strict)
         with pytest.raises(ValidationError, match="Number out of range"):
-            convert({"x": big}, dict[str, float], strict=strict)
+            convert({"x": big}, Dict[str, float], strict=strict)
 
     @pytest.mark.parametrize(
         "meta, good, bad",
@@ -1008,10 +1015,13 @@ class TestSequences:
     def test_sequence(self, in_type, out_type_annot, item_annot):
         out_type, out_annot = out_type_annot
         if item_annot is not None:
-            if out_annot is tuple:
-                out_annot = out_annot[item_annot, ...]
-            else:
-                out_annot = out_annot[item_annot]
+            try:
+                if out_annot is tuple:
+                    out_annot = out_annot[item_annot, ...]
+                else:
+                    out_annot = out_annot[item_annot]
+            except TypeError:
+                pytest.skip("Builtin generics require Python 3.9+")
         res = convert(in_type([1, 2]), out_annot)
         sol = out_type([1, 2])
         assert res == sol
@@ -1019,7 +1029,7 @@ class TestSequences:
 
     @seq_in_type
     @pytest.mark.parametrize(
-        "out_annot", [list[int], tuple[int, ...], set[int], frozenset[int]]
+        "out_annot", [List[int], Tuple[int, ...], Set[int], FrozenSet[int]]
     )
     def test_sequence_wrong_item_type(self, in_type, out_annot):
         with pytest.raises(
@@ -1040,21 +1050,21 @@ class TestSequences:
     def test_sequence_cyclic_recursion(self, kind):
         depth = 50
         if kind == "list":
-            typ = list[int]
+            typ = List[int]
             for _ in range(depth):
-                typ = list[typ]
+                typ = List[typ]
         elif kind == "tuple":
-            typ = tuple[int, ...]
+            typ = Tuple[int, ...]
             for _ in range(depth):
-                typ = tuple[typ, ...]
+                typ = Tuple[typ, ...]
         elif kind == "fixtuple":
-            typ = tuple[int]
+            typ = Tuple[int]
             for _ in range(depth):
-                typ = tuple[typ]
+                typ = Tuple[typ]
         elif kind == "set":
-            typ = frozenset[int]
+            typ = FrozenSet[int]
             for _ in range(depth):
-                typ = frozenset[typ]
+                typ = FrozenSet[typ]
 
         class Cache(Struct):
             value: typ
@@ -1084,7 +1094,7 @@ class TestSequences:
                 convert({"x": list(range(n))}, Ex)
 
     def test_fixtuple_any(self):
-        typ = tuple[Any, Any, Any]
+        typ = Tuple[Any, Any, Any]
         sol = (1, "two", False)
         res = convert([1, "two", False], typ)
         assert res == sol
@@ -1099,7 +1109,7 @@ class TestSequences:
             convert((1, "two"), typ)
 
     def test_fixtuple_typed(self):
-        typ = tuple[int, str, bool]
+        typ = Tuple[int, str, bool]
         sol = (1, "two", False)
         res = convert([1, "two", False], typ)
         assert res == sol
@@ -1225,22 +1235,22 @@ class TestDict:
 
     def test_empty_dict(self, dictcls):
         assert convert(dictcls({}), dict) == {}
-        assert convert(dictcls({}), dict[int, int]) == {}
+        assert convert(dictcls({}), Dict[int, int]) == {}
 
     def test_typed_dict(self, dictcls):
-        res = convert(dictcls({"x": 1, "y": 2}), dict[str, float])
+        res = convert(dictcls({"x": 1, "y": 2}), Dict[str, float])
         assert res == {"x": 1.0, "y": 2.0}
         assert all(type(v) is float for v in res.values())
 
         with pytest.raises(
             ValidationError, match=r"Expected `str`, got `int` - at `\$\[\.\.\.\]`"
         ):
-            convert(dictcls({"x": 1}), dict[str, str])
+            convert(dictcls({"x": 1}), Dict[str, str])
 
         with pytest.raises(
             ValidationError, match=r"Expected `int`, got `str` - at `key` in `\$`"
         ):
-            convert(dictcls({"x": 1}), dict[int, str])
+            convert(dictcls({"x": 1}), Dict[int, str])
 
     def test_dict_wrong_type(self):
         with pytest.raises(ValidationError, match=r"Expected `object`, got `int`"):
@@ -1248,7 +1258,7 @@ class TestDict:
 
     def test_str_formatted_keys(self):
         msg = {uuid.uuid4(): 1, uuid.uuid4(): 2}
-        res = convert(to_builtins(msg), dict[uuid.UUID, int])
+        res = convert(to_builtins(msg), Dict[uuid.UUID, int])
         assert res == msg
 
     @pytest.mark.parametrize("key_type", ["int", "enum", "literal"])
@@ -1264,26 +1274,26 @@ class TestDict:
             Key = int
             sol = msg
 
-        res = convert(msg, dict[Key, str])
+        res = convert(msg, Dict[Key, str])
         assert res == sol
 
-        res = convert(msg, dict[Key, str], str_keys=True)
+        res = convert(msg, Dict[Key, str], str_keys=True)
         assert res == sol
 
         str_msg = dictcls(to_builtins(dict(msg), str_keys=True))
-        res = convert(str_msg, dict[Key, str], str_keys=True)
+        res = convert(str_msg, Dict[Key, str], str_keys=True)
         assert res == sol
 
         with pytest.raises(
             ValidationError, match=r"Expected `int`, got `str` - at `key` in `\$`"
         ):
-            convert(str_msg, dict[Key, str])
+            convert(str_msg, Dict[Key, str])
 
     def test_non_str_keys(self, dictcls):
-        convert(dictcls({1.5: 1}), dict[float, int]) == {1.5: 1}
+        convert(dictcls({1.5: 1}), Dict[float, int]) == {1.5: 1}
 
         with pytest.raises(ValidationError):
-            convert(dictcls({"x": 1}), dict[tuple[int, int], int], str_keys=True)
+            convert(dictcls({"x": 1}), Dict[Tuple[int, int], int], str_keys=True)
 
     @pytest.mark.skipif(
         PY312,
@@ -1291,9 +1301,9 @@ class TestDict:
     )
     def test_dict_cyclic_recursion(self, dictcls):
         depth = 50
-        typ = dict[str, int]
+        typ = Dict[str, int]
         for _ in range(depth):
-            typ = dict[str, typ]
+            typ = Dict[str, typ]
 
         class Cache(Struct):
             value: typ
@@ -1446,6 +1456,7 @@ class TestFrozenDict:
                 convert(frozendictcls({"x": x}), Ex)
 
 
+@pytest.mark.skipif(TypedDict is None, reason="TypedDict not available")
 class TestTypedDict:
     def test_typeddict_total_true(self):
         class Ex(TypedDict):
@@ -1515,6 +1526,8 @@ class TestDataclass:
     @mapcls_and_from_attributes
     def test_dataclass(self, slots, mapcls, from_attributes):
         if slots:
+            if not PY310:
+                pytest.skip(reason="Python 3.10+ required")
             kws = {"slots": True}
         else:
             kws = {}
@@ -1577,6 +1590,8 @@ class TestDataclass:
     @mapcls_and_from_attributes
     def test_dataclass_defaults(self, frozen, slots, mapcls, from_attributes):
         if slots:
+            if not PY310:
+                pytest.skip(reason="Python 3.10+ required")
             kws = {"slots": True}
         else:
             kws = {}
@@ -2002,7 +2017,7 @@ class TestStruct:
             mapcls(x={}, y={}),
             mapcls(x=None, y=None, z=()),
         ]
-        a, b, c, d, e = convert(ts, list[Test], from_attributes=from_attributes)
+        a, b, c, d, e = convert(ts, List[Test], from_attributes=from_attributes)
         assert not gc.is_tracked(a)
         assert not gc.is_tracked(b)
         assert gc.is_tracked(c)
@@ -2022,7 +2037,7 @@ class TestStruct:
             mapcls(x=[], y=[]),
             mapcls(x={}, y={}),
         ]
-        for obj in convert(ts, list[Test], from_attributes=from_attributes):
+        for obj in convert(ts, List[Test], from_attributes=from_attributes):
             assert not gc.is_tracked(obj)
 
     @pytest.mark.parametrize("tag", ["Test", 123, -123])
@@ -2262,7 +2277,9 @@ class TestStructUnion:
     @mapcls_and_from_attributes
     def test_struct_union(self, tag1, tag2, unknown, mapcls, from_attributes):
         def decode(msg):
-            return convert(mapcls(msg), Test1 | Test2, from_attributes=from_attributes)
+            return convert(
+                mapcls(msg), Union[Test1, Test2], from_attributes=from_attributes
+            )
 
         class Test1(Struct, tag=tag1):
             a: int
@@ -2322,7 +2339,7 @@ class TestStructUnion:
         class Test3(Struct, tag=tag3, array_like=True):
             pass
 
-        typ = Test1 | Test2 | Test3
+        typ = Union[Union[Test1, Test2], Test3]
 
         # Decoding works
         assert roundtrip([tag1, 1, 2], typ) == Test1(1, 2)
@@ -2371,7 +2388,7 @@ class TestStructUnion:
         class Ex3(Struct, array_like=array_like):
             x: int
 
-        typ = Ex1 | Ex2
+        typ = Union[Ex1, Ex2]
 
         msg = Ex1(1)
         assert convert(msg, typ) is msg
@@ -2385,7 +2402,7 @@ class TestGenericStruct:
     def test_generic_struct(self, mapcls, from_attributes, array_like):
         class Ex(Struct, Generic[T], array_like=array_like):
             x: T
-            y: list[T]
+            y: List[T]
 
         sol = Ex(1, [1, 2])
         msg = mapcls(x=1, y=[1, 2])
@@ -2396,7 +2413,7 @@ class TestGenericStruct:
         res = convert(msg, Ex[int], from_attributes=from_attributes)
         assert res == sol
 
-        res = convert(msg, Ex[int | str], from_attributes=from_attributes)
+        res = convert(msg, Ex[Union[int, str]], from_attributes=from_attributes)
         assert res == sol
 
         res = convert(msg, Ex[float], from_attributes=from_attributes)
@@ -2408,14 +2425,14 @@ class TestGenericStruct:
     @mapcls_from_attributes_and_array_like
     def test_generic_struct_union(self, mapcls, from_attributes, array_like):
         class Test1(Struct, Generic[T], tag=True, array_like=array_like):
-            a: T | None
+            a: Optional[T]
             b: int
 
         class Test2(Struct, Generic[T], tag=True, array_like=array_like):
             x: T
             y: int
 
-        typ = Test1[T] | Test2[T]
+        typ = Union[Test1[T], Test2[T]]
 
         msg1 = Test1(1, 2)
         s1 = mapcls(type="Test1", a=1, b=2)
@@ -2466,7 +2483,7 @@ class TestStructPostInit:
             class Ex2(Struct, array_like=array_like, tag=True):
                 pass
 
-            typ = Ex | Ex2
+            typ = Union[Ex, Ex2]
         else:
             typ = Ex
 
@@ -2493,7 +2510,7 @@ class TestStructPostInit:
             class Ex2(Struct, array_like=array_like, tag=True):
                 pass
 
-            typ = Ex | Ex2
+            typ = Union[Ex, Ex2]
         else:
             typ = Ex
 
@@ -2505,7 +2522,7 @@ class TestStructPostInit:
             expected = exc_class
 
         with pytest.raises(expected, match="Oh no!") as rec:
-            convert(msg, type=list[typ], from_attributes=from_attributes)
+            convert(msg, type=List[typ], from_attributes=from_attributes)
 
         if expected is ValidationError:
             assert "- at `$[0]`" in str(rec.value)
@@ -2732,12 +2749,12 @@ class TestLax:
         ],
     )
     def test_lax_union_valid(self, msg, sol):
-        typ = int | float | bool | None
+        typ = Optional[Union[Union[int, float], bool]]
         assert_eq(convert(msg, typ, strict=False), sol)
 
     @pytest.mark.parametrize("msg", ["1a", "1.5a", "falsx", "trux", "nulx"])
     def test_lax_union_invalid(self, msg):
-        typ = int | float | bool | None
+        typ = Optional[Union[Union[int, float], bool]]
         with pytest.raises(
             ValidationError, match="Expected `int | float | bool | null`"
         ):
@@ -2757,12 +2774,14 @@ class TestLax:
     def test_lax_union_invalid_constr(self, msg, err):
         """Ensure that values that parse properly but don't meet the specified
         constraints error with a specific constraint error"""
-        typ = Annotated[int, Meta(ge=0), Meta(le=1000)] | Annotated[float, Meta(le=100)]
+        typ = Union[
+            Annotated[int, Meta(ge=0), Meta(le=1000)], Annotated[float, Meta(le=100)]
+        ]
         with pytest.raises(ValidationError, match=err):
             convert(msg, typ, strict=False)
 
     def test_lax_union_extended(self):
-        typ = int | float | bool | datetime.datetime | None
+        typ = Optional[Union[Union[Union[int, float], bool], datetime.datetime]]
         dt = datetime.datetime.now()
         assert_eq(convert("1", typ, strict=False), 1)
         assert_eq(convert("1.5", typ, strict=False), 1.5)
@@ -2771,7 +2790,7 @@ class TestLax:
         assert_eq(convert(dt.isoformat(), typ, strict=False), dt)
 
     def test_lax_implies_str_keys(self):
-        res = convert({"1": False}, dict[int, bool], strict=False)
+        res = convert({"1": False}, Dict[int, bool], strict=False)
         assert res == {1: False}
 
     def test_lax_implies_no_builtin_types(self):
@@ -2789,19 +2808,19 @@ class TestCustom:
 
         msg = {"x": (1, 2)}
         sol = {"x": complex(1, 2)}
-        res = convert(msg, dict[str, complex], dec_hook=dec_hook)
+        res = convert(msg, Dict[str, complex], dec_hook=dec_hook)
         assert res == sol
 
     def test_custom_no_dec_hook(self):
         with pytest.raises(ValidationError, match="Expected `complex`, got `str`"):
-            convert({"x": "oh no"}, dict[str, complex])
+            convert({"x": "oh no"}, Dict[str, complex])
 
     def test_custom_dec_hook_errors(self):
         def dec_hook(typ, x):
             raise TypeError("Oops!")
 
         with pytest.raises(ValidationError, match="Oops!") as rec:
-            convert({"x": (1, 2)}, dict[str, complex], dec_hook=dec_hook)
+            convert({"x": (1, 2)}, Dict[str, complex], dec_hook=dec_hook)
 
         assert rec.value.__cause__ is rec.value.__context__
         assert type(rec.value.__cause__) is TypeError

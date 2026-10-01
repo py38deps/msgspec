@@ -5,4 +5,4 @@
 
 def scheme(version):
     """Always report the pinned backport version."""
-    return "0.21.1"
+    return "0.22.0"

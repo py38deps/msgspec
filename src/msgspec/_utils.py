@@ -130,6 +130,14 @@ def _apply_params(obj, mapping):
     return obj[args]
 
 
+try:
+    from types import GenericAlias as _types_GenericAlias
+except ImportError:
+    # `types.GenericAlias` doesn't exist before Python 3.9, where builtin
+    # generics (`list[int]`) can't be produced at runtime at all.
+    _types_GenericAlias = type("GenericAlias", (), {})
+
+
 def _get_class_mro_and_typevar_mappings(obj):
     mapping = {}
 
@@ -137,13 +145,13 @@ def _get_class_mro_and_typevar_mappings(obj):
     # 'Base[int]' produced when a 'Generic' subclass inherits a builtin's
     # '__class_getitem__') satisfies 'isinstance(_, type)', unlike on 3.11+. we still
     # want to treat those as parametrised aliases, not bare classes
-    if isinstance(obj, type) and not isinstance(obj, types.GenericAlias):
+    if isinstance(obj, type) and not isinstance(obj, _types_GenericAlias):
         cls = obj
     else:
         cls = obj.__origin__
 
     def inner(c, scope):
-        if isinstance(c, type) and not isinstance(c, types.GenericAlias):
+        if isinstance(c, type) and not isinstance(c, _types_GenericAlias):
             cls = c
             new_scope = {}
         else:

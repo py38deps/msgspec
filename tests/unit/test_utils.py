@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from typing import Generic, TypeVar
+from typing import (
+    Generic,
+    List,
+    Optional,
+    Set,
+    TypeVar,
+)
 
 import pytest
 
@@ -74,14 +80,14 @@ class TestGetClassAnnotations:
     def test_simple_generic(self):
         class Test(Generic[T]):
             x: T
-            y: list[T]
+            y: List[T]
             z: int
 
-        assert get_class_annotations(Test) == {"x": T, "y": list[T], "z": int}
-        assert get_class_annotations(Test[int]) == {"x": int, "y": list[int], "z": int}
-        assert get_class_annotations(Test[set[T]]) == {
-            "x": set[T],
-            "y": list[set[T]],
+        assert get_class_annotations(Test) == {"x": T, "y": List[T], "z": int}
+        assert get_class_annotations(Test[int]) == {"x": int, "y": List[int], "z": int}
+        assert get_class_annotations(Test[Set[T]]) == {
+            "x": Set[T],
+            "y": List[Set[T]],
             "z": int,
         }
 
@@ -93,45 +99,45 @@ class TestGetClassAnnotations:
 
     def test_generic_sub2(self):
         class Sub(Base, Generic[T]):
-            y: list[T]
+            y: List[T]
 
-        assert get_class_annotations(Sub) == {"x": T, "y": list[T]}
-        assert get_class_annotations(Sub[int]) == {"x": T, "y": list[int]}
+        assert get_class_annotations(Sub) == {"x": T, "y": List[T]}
+        assert get_class_annotations(Sub[int]) == {"x": T, "y": List[int]}
 
     def test_generic_sub3(self):
         class Sub(Base[int], Generic[T]):
-            y: list[T]
+            y: List[T]
 
-        assert get_class_annotations(Sub) == {"x": int, "y": list[T]}
-        assert get_class_annotations(Sub[float]) == {"x": int, "y": list[float]}
+        assert get_class_annotations(Sub) == {"x": int, "y": List[T]}
+        assert get_class_annotations(Sub[float]) == {"x": int, "y": List[float]}
 
     def test_generic_sub4(self):
         class Sub(Base[T]):
-            y: list[T]
+            y: List[T]
 
-        assert get_class_annotations(Sub) == {"x": T, "y": list[T]}
-        assert get_class_annotations(Sub[int]) == {"x": int, "y": list[int]}
+        assert get_class_annotations(Sub) == {"x": T, "y": List[T]}
+        assert get_class_annotations(Sub[int]) == {"x": int, "y": List[int]}
 
     def test_generic_sub5(self):
         class Sub(Base[T], Generic[T]):
-            y: list[T]
+            y: List[T]
 
-        assert get_class_annotations(Sub) == {"x": T, "y": list[T]}
-        assert get_class_annotations(Sub[int]) == {"x": int, "y": list[int]}
+        assert get_class_annotations(Sub) == {"x": T, "y": List[T]}
+        assert get_class_annotations(Sub[int]) == {"x": int, "y": List[int]}
 
     def test_generic_sub6(self):
         class Sub(Base[S]):
-            y: list[S]
+            y: List[S]
 
-        assert get_class_annotations(Sub) == {"x": S, "y": list[S]}
-        assert get_class_annotations(Sub[int]) == {"x": int, "y": list[int]}
+        assert get_class_annotations(Sub) == {"x": S, "y": List[S]}
+        assert get_class_annotations(Sub[int]) == {"x": int, "y": List[int]}
 
     def test_generic_sub7(self):
-        class Sub(Base[list[T]]):
-            y: set[T]
+        class Sub(Base[List[T]]):
+            y: Set[T]
 
-        assert get_class_annotations(Sub) == {"x": list[T], "y": set[T]}
-        assert get_class_annotations(Sub[int]) == {"x": list[int], "y": set[int]}
+        assert get_class_annotations(Sub) == {"x": List[T], "y": Set[T]}
+        assert get_class_annotations(Sub[int]) == {"x": List[int], "y": Set[int]}
 
     def test_generic_sub8(self):
         class Sub(Base[int], Base2[float, str]):
@@ -140,14 +146,14 @@ class TestGetClassAnnotations:
         assert get_class_annotations(Sub) == {"x": int, "a": float, "b": str}
 
     def test_generic_sub9(self):
-        class Sub(Base[U], Base2[list[U], U]):
+        class Sub(Base[U], Base2[List[U], U]):
             y: str
 
-        assert get_class_annotations(Sub) == {"y": str, "x": U, "a": list[U], "b": U}
+        assert get_class_annotations(Sub) == {"y": str, "x": U, "a": List[U], "b": U}
         assert get_class_annotations(Sub[int]) == {
             "y": str,
             "x": int,
-            "a": list[int],
+            "a": List[int],
             "b": int,
         }
 
@@ -157,30 +163,30 @@ class TestGetClassAnnotations:
         assert get_class_annotations(Sub2) == {
             "x": list,
             "y": str,
-            "a": list[int],
+            "a": List[int],
             "b": int,
         }
 
     def test_generic_sub10(self):
-        class Sub(Base[U], Base2[list[U], U]):
+        class Sub(Base[U], Base2[List[U], U]):
             y: str
 
-        class Sub3(Sub[list[T]]):
+        class Sub3(Sub[List[T]]):
             c: T
 
         assert get_class_annotations(Sub3) == {
             "c": T,
             "y": str,
-            "x": list[T],
-            "a": list[list[T]],
-            "b": list[T],
+            "x": List[T],
+            "a": List[List[T]],
+            "b": List[T],
         }
         assert get_class_annotations(Sub3[int]) == {
             "c": int,
             "y": str,
-            "x": list[int],
-            "a": list[list[int]],
-            "b": list[int],
+            "x": List[int],
+            "a": List[List[int]],
+            "b": List[int],
         }
 
     def test_generic_sub11(self):
@@ -205,6 +211,6 @@ class TestGetClassAnnotations:
 
     def test_union_backport_installed(self):
         class Ex:
-            x: int | None = None
+            x: Optional[int] = None
 
-        assert get_class_annotations(Ex) == {"x": int | None}
+        assert get_class_annotations(Ex) == {"x": Optional[int]}

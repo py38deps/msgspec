@@ -19,6 +19,7 @@ from typing import (
     Literal,
     NamedTuple,
     NewType,
+    Optional,
     Set,
     Tuple,
     TypedDict,
@@ -99,7 +100,7 @@ def test_typevar():
 
 
 def test_bound_typevar():
-    T = TypeVar("T", bound=int | str)
+    T = TypeVar("T", bound=Union[int, str])
     assert mi.type_info(T) == mi.UnionType((mi.IntType(), mi.StrType()))
 
 
@@ -222,9 +223,9 @@ def test_newtype():
 @pytest.mark.parametrize(
     "src, typ",
     [
-        ("type Ex = str | None", str | None),
-        ("type Ex[T] = tuple[T, int]", tuple[Any, int]),
-        ("type Temp[T] = tuple[T, int]; Ex = Temp[str]", tuple[str, int]),
+        ("type Ex = str | None", Optional[str]),
+        ("type Ex[T] = tuple[T, int]", Tuple[Any, int]),
+        ("type Temp[T] = tuple[T, int]; Ex = Temp[str]", Tuple[str, int]),
     ],
 )
 def test_typealias(src, typ):
@@ -372,7 +373,7 @@ def test_abstract_mapping(typ):
 @pytest.mark.parametrize("use_union_operator", [False, True])
 def test_union(use_union_operator):
     if use_union_operator:
-        typ = int | str
+        typ = Union[int, str]
     else:
         typ = Union[int, str]
 
@@ -381,7 +382,7 @@ def test_union(use_union_operator):
 
     assert not sol.includes_none
     assert mi.type_info(Union[int, None]).includes_none
-    assert mi.type_info(int | None).includes_none
+    assert mi.type_info(Optional[int]).includes_none
 
 
 def test_int_literal():
@@ -503,7 +504,7 @@ def test_struct_encode_name():
 def test_generic_struct():
     class Example(msgspec.Struct, Generic[T]):
         a: T
-        b: list[T]
+        b: List[T]
 
     sol = mi.StructType(
         Example,
@@ -560,7 +561,7 @@ def test_generic_namedtuple():
 
     class Example(NamedTuple, Generic[T]):
         a: T
-        b: list[T]
+        b: List[T]
 
     sol = mi.NamedTupleType(
         Example,
@@ -640,7 +641,7 @@ def test_generic_typeddict():
 
     class Example(TypedDict, Generic[T]):
         a: T
-        b: list[T]
+        b: List[T]
 
     sol = mi.TypedDictType(
         Example,
@@ -707,7 +708,7 @@ def test_generic_dataclass_or_attrs(module):
     @decorator
     class Example(Generic[T]):
         a: T
-        b: list[T]
+        b: List[T]
 
     sol = mi.DataclassType(
         Example,
@@ -733,20 +734,20 @@ def test_unset_fields(kind):
     if kind == "struct":
 
         class Ex(msgspec.Struct):
-            x: int | msgspec.UnsetType = msgspec.UNSET
+            x: Union[int, msgspec.UnsetType] = msgspec.UNSET
 
     elif kind == "dataclass":
 
         @dataclass
         class Ex:
-            x: int | msgspec.UnsetType = msgspec.UNSET
+            x: Union[int, msgspec.UnsetType] = msgspec.UNSET
 
     elif kind == "attrs":
         attrs = pytest.importorskip("attrs")
 
         @attrs.define
         class Ex:
-            x: int | msgspec.UnsetType = msgspec.UNSET
+            x: Union[int, msgspec.UnsetType] = msgspec.UNSET
 
     res = mi.type_info(Ex)
     assert res.fields == (mi.Field("x", "x", mi.IntType(), required=False),)
@@ -841,7 +842,7 @@ def test_multi_type_info():
 
     assert mi.multi_type_info([]) == ()
 
-    res = mi.multi_type_info([Example, list[Example]])
+    res = mi.multi_type_info([Example, List[Example]])
     assert res == (ex_type, mi.ListType(ex_type))
     assert res[0] is res[1].item_type
 

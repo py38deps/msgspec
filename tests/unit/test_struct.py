@@ -9,7 +9,13 @@ import textwrap
 import weakref
 from contextlib import contextmanager
 from inspect import Parameter, Signature
-from typing import Any, Generic, TypeVar
+from typing import (
+    Any,
+    Generic,
+    List,
+    Optional,
+    TypeVar,
+)
 
 import pytest
 
@@ -904,7 +910,7 @@ def test_struct_defaults_from_field():
         req: int = field()
         x: int = field(default=1)
         y: int = field(default_factory=lambda: 2)
-        z: list[int] = field(default=default)
+        z: List[int] = field(default=default)
 
     t = Test(100)
     assert t.req == 100
@@ -2499,7 +2505,7 @@ class TestReplace:
     def test_replace_gc_delayed_tracking(self, replace):
         class Test(msgspec.Struct):
             x: int
-            y: list[int] | None
+            y: Optional[List[int]]
 
         obj = Test(1, None)
         assert not gc.is_tracked(replace(obj))
@@ -2515,7 +2521,7 @@ class TestReplace:
     def test_replace_gc_false(self, replace):
         class Test(msgspec.Struct, gc=False):
             x: int
-            y: list[int]
+            y: List[int]
 
         res = replace(Test(1, [1, 2]), x=3)
         assert res == Test(3, [1, 2])
